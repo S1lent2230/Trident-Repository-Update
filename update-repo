@@ -1,0 +1,124 @@
+#!/bin/bash
+
+## Main level settings
+MAIN_REPO_DIR="/var/www/html"
+LEVEL_1="trident"
+LEVEL_2="amd64/binary"
+
+## Package/Repo settings
+LIST_STORAGE="/etc/apt/sources.list.d"
+TRIDENT_LIST="trident.list"
+HOST="127.0.0.1"
+PAC="Packages.gz"
+
+## Other settings
+QUIET_UPDATE="0"
+ID="$(awk -F'=' '/^ID=/ {print $2}' /etc/os-release)"
+
+## Check if the user is in root
+if [ "$(id -u)" != "0" ]; then
+	echo -e "\n\033[31m[-]\033[37m Please run me as root, i need to be in root...\033[0m\n"
+	exit 1
+fi
+
+## Check if fedora or arch is running
+if [ ${ID} == "arch" ] ||
+	[[ ${ID} == "fedora" ]] ||
+	[[ ${ID} == "centos" ]] ||
+	[[ ${ID} == "manjaro" ]] ||
+	[[ ${ID} == "blackarch" ]]; then
+		echo -e "\n\033[31m[-]\033[37m Arch Based, Fedora, and REHL Distros are not supported by this script...\033[0m\n"
+		exit 1
+	fi
+
+# -----------------------------------------------------------------------------------------------------
+# Functions
+# => This one creates and writes to the list local repo file
+function write_list()
+{
+	# Check for the list file, if it exists, skip the process, else: create the file
+	# within the repository list local directory
+	if [ -d ${LIST_STORAGE} ]; then
+		if [[ -f "${LIST_STORAGE}/${TRIDENT_LIST}" ]]; then
+			echo -e "\033[34m[*]\033[37m Trident Local List file exists, skipping generation...\033[0m"
+		else
+			echo -e "\033[34m[*]\033[37m Generating \"${TRIDENT_LIST}\" in \"${LIST_STORAGE}\"...\033[0m"
+			touch ${LIST_STORAGE}/${TRIDENT_LIST}
+			if [[ $? == "0" ]]; then
+				echo -e "\033[34m[*]\033[37m Trident List generated successfully, moving on...\033[0m"
+				echo -e "\033[34m[*]\033[37m Writing repository data to profile...\033[0m"
+				# Write to the profile list
+				echo "deb [trusted=yes] http://${HOST}/${LEVEL_1}/ ${LEVEL_2}/" > ${LIST_STORAGE}/${TRIDENT_LIST}
+				if [[ $? == "0" ]]; then
+					echo -e "\033[34m[*]\033[37m Data written, host and levels set...\033[0m"
+				else
+					echo -e "\n\033[31m[-]\033[37m Could not write host and level data...\033[0m\n"
+					exit 1
+				fi
+			else
+				echo -e "\n\033[31m[-]\033[37m Could not generate \"${TRIDENT_LIST}\" in \"${LIST_STORAGE}\"...\033[0m\n"
+				exit 1
+			fi
+		fi
+	else
+		echo -e "\n\033[31m[-]\033[37m Your system 'seems' to missing the ${LIST_STORAGE} directory...wonder why...\033[0m\n"
+		exit 1
+	fi
+}
+#
+# This one scans the packages and writes them to the primary package zip
+#
+function scan_packages()
+{
+	# Check and change to the Level 2 directory
+	if [ -d ${MAIN_REPO_DIR} ]; then
+		if [[ -d "${MAIN_REPO_DIR}/${LEVEL_1}" ]]; then
+			echo -e "\033[34m[*]\033[37m Entering Level 2 directory: ${LEVEL_2}...\033[0m"
+			cd ${MAIN_REPO_DIR}/${LEVEL_1}
+			echo -e "\033[34m[*]\033[37m Scanning packages and writing to binary zip...\033[0m"
+			# Scan the packages
+			dpkg-scanpackages ${LEVEL_2} | gzip -9c > ${LEVEL_2}/${PAC}
+			if [[ $? == "0" ]]; then
+				echo -e "\033[34m[*]\033[37m Package scan complete, updating system, please wait..."
+				if [[ ${QUIET_UPDATE} == "0" ]]; then
+					apt update -qq
+					if [[ $? == "0" ]]; then
+						echo -e "\033[34m[*]\033[37m Update complete, repository ready for use...\033[0m\n"
+						exit 0
+					else
+						echo -e "\n\033[31m[-]\033[37m Could not update system...\033[0m\n"
+						exit 1
+					fi
+				else
+					apt update
+					if [[ $? == "0" ]]; then
+						echo -e "\033[34m[*]\033[37m Update complete, repository ready for use...\033[0m\n"
+						exit 0
+					else
+						echo -e "\n\033[31m[-]\033[37m Could not update system...\033[0m\n"
+						exit 1
+					fi
+				fi
+			else
+				echo -e "\n\033[31m[-]\033[37m Could not run package scan, binary zip generation failed...\033[0m\n"
+				exit 1
+			fi
+		else
+			echo -e "\n\033[31m[-]\033[37m Could not find (Level 1) directory: ${LEVEL_1}...\033[0m\n"
+			exit 1
+		fi
+	else
+		echo -e "\n\033[31m[-]\033[37m Could not find primary web directory: ${MAIN_REPO_DIR}, try\n\033[01;33m=>> \033[01;37m\"[sudo] apt install apache2\"...\033[00m\n"
+		exit 1
+	fi
+}
+
+function main()
+{
+	# Write and scan the package lists, then update the system
+	write_list
+	scan_packages
+}
+
+## Launch main function
+main
