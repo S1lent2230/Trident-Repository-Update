@@ -13,7 +13,7 @@ PAC="Packages.gz"
 
 ## Other settings
 QUIET_UPDATE="0"
-ID="$(awk -F'=' '/^ID=/ {print $2}' /etc/os-release)"
+ID="$(awk -F'=' '/^ID=/ {print $2}' /etc/os-release | cut -d'"' -f2)"
 
 ## Check if the user is in root
 if [ "$(id -u)" != "0" ]; then
